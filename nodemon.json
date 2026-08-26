@@ -1,0 +1,3 @@
+{
+  "ignore": ["ingest/out/**", "ingest/.env"]
+}

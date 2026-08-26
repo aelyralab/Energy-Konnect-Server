@@ -1,0 +1,556 @@
+// Energy Konnect — Prisma schema
+//
+// Model of record: ARTICLE (identity + lifecycle) → ARTICLE VERSION (a complete
+// proposed state) → CONTENT BLOCKS (structured content, block payload in JSONB).
+//
+// The pair `Article.currentPublishedVersionId` / `Article.pendingVersionId` is
+// what lets a publisher revise a live article without the public ever seeing the
+// draft. Public reads resolve content *only* through currentPublishedVersionId.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // Unpooled connection. Prisma migrations fail against Neon's PgBouncer.
+  directUrl  = env("DIRECT_URL")
+  // citext powers case-insensitive unique emails; declaring it here makes the
+  // migration create the extension instead of it being a manual setup step.
+  extensions = [citext]
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  USER
+  PUBLISHER
+  ADMIN
+}
+
+enum ArticleStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+  UNPUBLISHED
+  ARCHIVED
+}
+
+enum VersionStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+  // Was published, then replaced by a newer approved version. Without this,
+  // version 1 and version 2 would both read as PUBLISHED after a revision.
+  SUPERSEDED
+}
+
+enum IssueStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum BlockType {
+  heading
+  paragraph
+  image
+  quote
+  callout
+  table
+  figure
+  list
+  formula
+  reference
+}
+
+enum ReviewActionType {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  PUBLISHED_DIRECT
+  UNPUBLISHED
+  ARCHIVED
+}
+
+enum NotificationType {
+  ARTICLE_PUBLISHED
+  ARTICLE_APPROVED
+  ARTICLE_REJECTED
+  ISSUE_PUBLISHED
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String @id @default(uuid()) @db.Uuid
+  name         String @db.VarChar(120)
+  // citext: "Nilanjan@x.com" and "nilanjan@x.com" must be the same account.
+  email        String @unique @db.Citext
+  passwordHash String @map("password_hash")
+  role         Role   @default(USER)
+
+  emailVerified      Boolean @default(false) @map("email_verified")
+  // Deactivation, not deletion — comments must survive (rule 23).
+  isActive           Boolean @default(true) @map("is_active")
+  // Publication announcements only. OTP mail ignores this (§41).
+  emailNotifications Boolean @default(true) @map("email_notifications")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  emailVerifications UserEmailVerification[]
+  refreshTokens      RefreshToken[]
+  articles           Article[]               @relation("ArticlePublisher")
+  authoredVersions   ArticleVersion[]        @relation("VersionCreator")
+  comments           Comment[]
+  reviewActions      ArticleReviewAction[]
+  uploadedMedia      MediaAsset[]
+  notifications      Notification[]
+
+  @@index([role, isActive])
+  @@map("users")
+}
+
+model UserEmailVerification {
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @map("user_id") @db.Uuid
+  // Argon2 hash. Rule: never store an OTP in plaintext (§6).
+  otpHash    String     @map("otp_hash")
+  purpose    OtpPurpose @default(EMAIL_VERIFICATION)
+  expiresAt  DateTime   @map("expires_at")
+  consumedAt DateTime?  @map("consumed_at")
+  attempts   Int        @default(0)
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, consumedAt])
+  @@index([expiresAt])
+  @@map("user_email_verifications")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  // SHA-256 of the opaque token. A database leak must not yield live sessions.
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  // Set when this token is rotated. Presenting an already-rotated token means
+  // it was stolen, so the whole family gets revoked.
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  userAgent    String?   @map("user_agent") @db.VarChar(400)
+  ip           String?   @db.VarChar(64)
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Taxonomy
+// ---------------------------------------------------------------------------
+
+model Category {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(120)
+  slug        String   @unique @db.VarChar(140)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  articles Article[]
+  versions ArticleVersion[]
+
+  @@index([isActive])
+  @@map("categories")
+}
+
+model Topic {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(120)
+  slug        String   @unique @db.VarChar(140)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  articles ArticleTopic[]
+
+  @@index([isActive])
+  @@map("topics")
+}
+
+model Tag {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(80)
+  slug      String   @unique @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  articles ArticleTag[]
+
+  @@map("tags")
+}
+
+model ArticleTopic {
+  articleId String @map("article_id") @db.Uuid
+  topicId   String @map("topic_id") @db.Uuid
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  topic   Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, topicId])
+  @@index([topicId])
+  @@map("article_topics")
+}
+
+model ArticleTag {
+  articleId String @map("article_id") @db.Uuid
+  tagId     String @map("tag_id") @db.Uuid
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@index([tagId])
+  @@map("article_tags")
+}
+
+// ---------------------------------------------------------------------------
+// Media
+// ---------------------------------------------------------------------------
+
+model MediaAsset {
+  id         String   @id @default(uuid()) @db.Uuid
+  fileName   String   @map("file_name") @db.VarChar(255)
+  storageKey String   @map("storage_key") @db.VarChar(500)
+  url        String   @db.VarChar(1000)
+  mimeType   String   @map("mime_type") @db.VarChar(120)
+  fileSize   Int      @map("file_size")
+  width      Int?
+  height     Int?
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  uploader User? @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  articleCovers Article[]          @relation("ArticleCover")
+  versionCovers ArticleVersion[]   @relation("VersionCover")
+  issueCovers   PublicationIssue[] @relation("IssueCover")
+  issuePdfs     PublicationIssue[] @relation("IssuePdf")
+
+  @@index([uploadedBy, createdAt])
+  @@map("media_assets")
+}
+
+// ---------------------------------------------------------------------------
+// Articles
+// ---------------------------------------------------------------------------
+
+model Article {
+  id       String  @id @default(uuid()) @db.Uuid
+  // Frozen after first publish — published URLs must not rot.
+  slug     String  @unique @db.VarChar(220)
+  title    String  @db.VarChar(300)
+  subtitle String? @db.VarChar(400)
+  summary  String?
+
+  // Author is plain metadata, deliberately not a User (§7, "do not create an
+  // Author table"). publisherId is the account accountable for the workflow;
+  // authorName is the credited byline. They are not the same thing.
+  authorName String  @map("author_name") @db.VarChar(200)
+  authorBio  String? @map("author_bio")
+
+  categoryId   String? @map("category_id") @db.Uuid
+  publisherId  String  @map("publisher_id") @db.Uuid
+  coverMediaId String? @map("cover_media_id") @db.Uuid
+
+  status     ArticleStatus @default(DRAFT)
+  isFeatured Boolean       @default(false) @map("is_featured")
+
+  // The §29 mechanism. Public reads follow currentPublishedVersionId and
+  // nothing else; pendingVersionId is invisible outside publisher/admin routes.
+  currentPublishedVersionId String? @unique @map("current_published_version_id") @db.Uuid
+  pendingVersionId          String? @unique @map("pending_version_id") @db.Uuid
+
+  // Just the taxonomy component of search (category name + topic names + tag
+  // names) — title/subtitle/summary/authorName feed search_vector directly
+  // from their own columns above, so only this joined-table-derived piece
+  // needs denormalizing (§42; see the 20260822140000 migration and
+  // articles.service.js#refreshSearchText). The tsvector column itself and
+  // its GIN index are hand-written — Prisma has no tsvector type.
+  searchText String? @map("search_text")
+
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Restrict: an account that owns articles cannot be deleted out from under
+  // them. Accounts are deactivated, not removed.
+  publisher User        @relation("ArticlePublisher", fields: [publisherId], references: [id], onDelete: Restrict)
+  category  Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  cover     MediaAsset? @relation("ArticleCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+
+  // Two nullable pointers into the version history. The cycle between Article
+  // and ArticleVersion is fine in Postgres because both sides are nullable:
+  // insert the article, insert version 1, then point the article at it.
+  currentPublishedVersion ArticleVersion? @relation("CurrentPublishedVersion", fields: [currentPublishedVersionId], references: [id], onDelete: SetNull)
+  pendingVersion          ArticleVersion? @relation("PendingVersion", fields: [pendingVersionId], references: [id], onDelete: SetNull)
+
+  versions      ArticleVersion[]      @relation("ArticleVersions")
+  topics        ArticleTopic[]
+  tags          ArticleTag[]
+  issues        IssueArticle[]
+  comments      Comment[]
+  reviewActions ArticleReviewAction[]
+  notifications Notification[]
+  guestReads    GuestRead[]
+
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([categoryId, status])
+  @@index([publisherId, status, updatedAt(sort: Desc)])
+  @@index([isFeatured, publishedAt(sort: Desc)])
+  @@map("articles")
+}
+
+model ArticleVersion {
+  id            String        @id @default(uuid()) @db.Uuid
+  articleId     String        @map("article_id") @db.Uuid
+  versionNumber Int           @map("version_number")
+  createdBy     String        @map("created_by") @db.Uuid
+  status        VersionStatus @default(DRAFT)
+
+  // Metadata is versioned: a pending revision may propose a new title,
+  // summary, byline or category without touching what the public sees.
+  title        String  @db.VarChar(300)
+  subtitle     String? @db.VarChar(400)
+  summary      String?
+  authorName   String  @map("author_name") @db.VarChar(200)
+  authorBio    String? @map("author_bio")
+  categoryId   String? @map("category_id") @db.Uuid
+  coverMediaId String? @map("cover_media_id") @db.Uuid
+
+  // Derived from block word count on save; surfaces as "11 min read".
+  readingMinutes Int? @map("reading_minutes")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  submittedAt DateTime? @map("submitted_at")
+  approvedAt  DateTime? @map("approved_at")
+  rejectedAt  DateTime? @map("rejected_at")
+
+  article  Article     @relation("ArticleVersions", fields: [articleId], references: [id], onDelete: Cascade)
+  creator  User        @relation("VersionCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  category Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  cover    MediaAsset? @relation("VersionCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+
+  blocks        ArticleContentBlock[]
+  reviewActions ArticleReviewAction[]
+
+  // Back-references for the two pointers on Article. Both are 1:1, which is why
+  // the pointer columns carry @unique — two articles cannot share a version.
+  currentOf Article? @relation("CurrentPublishedVersion")
+  pendingOf Article? @relation("PendingVersion")
+
+  @@unique([articleId, versionNumber])
+  @@index([articleId, status])
+  @@index([status, submittedAt])
+  @@map("article_versions")
+}
+
+model ArticleContentBlock {
+  id               String    @id @default(uuid()) @db.Uuid
+  articleVersionId String    @map("article_version_id") @db.Uuid
+  blockOrder       Int       @map("block_order")
+  blockType        BlockType @map("block_type")
+  // Block-specific payload. Shape per type is enforced by a zod discriminated
+  // union at the API boundary (utils/blockSchemas.js), not by the database.
+  content          Json      @db.JsonB
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  version ArticleVersion @relation(fields: [articleVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([articleVersionId, blockOrder])
+  @@index([articleVersionId, blockOrder])
+  @@map("article_content_blocks")
+}
+
+model ArticleReviewAction {
+  id               String           @id @default(uuid()) @db.Uuid
+  articleId        String           @map("article_id") @db.Uuid
+  articleVersionId String?          @map("article_version_id") @db.Uuid
+  actorId          String?          @map("actor_id") @db.Uuid
+  action           ReviewActionType
+  reason           String?
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  article Article         @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  version ArticleVersion? @relation(fields: [articleVersionId], references: [id], onDelete: SetNull)
+  // Audit rows outlive the accounts that caused them.
+  actor   User?           @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([articleId, createdAt])
+  @@index([action, createdAt])
+  @@map("article_review_actions")
+}
+
+// ---------------------------------------------------------------------------
+// Publication issues
+// ---------------------------------------------------------------------------
+
+model PublicationIssue {
+  id           String  @id @default(uuid()) @db.Uuid
+  slug         String  @unique @db.VarChar(220)
+  volumeNumber Int     @map("volume_number")
+  issueNumber  Int     @map("issue_number")
+  title        String  @db.VarChar(300)
+  period       String? @db.VarChar(120)
+  theme        String? @db.VarChar(300)
+  description  String?
+
+  coverMediaId String? @map("cover_media_id") @db.Uuid
+  pdfMediaId   String? @map("pdf_media_id") @db.Uuid
+
+  status      IssueStatus @default(DRAFT)
+  publishedAt DateTime?   @map("published_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  cover    MediaAsset?    @relation("IssueCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  pdf      MediaAsset?    @relation("IssuePdf", fields: [pdfMediaId], references: [id], onDelete: SetNull)
+  articles IssueArticle[]
+
+  @@unique([volumeNumber, issueNumber])
+  @@index([status, publishedAt])
+  @@map("publication_issues")
+}
+
+model IssueArticle {
+  issueId      String  @map("issue_id") @db.Uuid
+  articleId    String  @map("article_id") @db.Uuid
+  displayOrder Int     @default(0) @map("display_order")
+  // "Editorial", "Cover Story", "Tutorial", "Consumer Desk", "News and Events"
+  sectionLabel String? @map("section_label") @db.VarChar(120)
+
+  issue   PublicationIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  article Article          @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, articleId])
+  @@index([issueId, displayOrder])
+  @@index([articleId])
+  @@map("issue_articles")
+}
+
+// ---------------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------------
+
+model Comment {
+  id        String   @id @default(uuid()) @db.Uuid
+  articleId String   @map("article_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  content   String
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  // Restrict, not Cascade: rule 23 says comments survive user deletion, and a
+  // database-level Restrict makes the mistake impossible rather than merely
+  // discouraged. Accounts are deactivated (isActive = false), never deleted.
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([articleId, isDeleted, createdAt])
+  @@index([userId])
+  @@map("comments")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  articleId String?          @map("article_id") @db.Uuid
+  title     String           @db.VarChar(300)
+  message   String
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article Article? @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  emails EmailNotification[]
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+/// Transactional outbox for email delivery. Rows are written in the same
+/// transaction as the publish, then drained by the worker with
+/// `FOR UPDATE SKIP LOCKED` — so a crash mid-send loses nothing and duplicates
+/// nothing. Redis carries one job per event, never one per recipient (§0.4).
+model EmailNotification {
+  id                String      @id @default(uuid()) @db.Uuid
+  notificationId    String      @map("notification_id") @db.Uuid
+  recipientEmail    String      @map("recipient_email") @db.VarChar(320)
+  status            EmailStatus @default(PENDING)
+  providerMessageId String?     @map("provider_message_id") @db.VarChar(200)
+  attempts          Int         @default(0)
+  sentAt            DateTime?   @map("sent_at")
+  failedAt          DateTime?   @map("failed_at")
+  error             String?
+  createdAt         DateTime    @default(now()) @map("created_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("email_notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Guest reads
+// ---------------------------------------------------------------------------
+
+/// Server-side enforcement of the two-article guest limit (§5). The unique pair
+/// is what makes the limit count *distinct* articles — re-reading article A ten
+/// times still costs one. `guestId` comes from a signed cookie.
+model GuestRead {
+  id        String   @id @default(uuid()) @db.Uuid
+  guestId   String   @map("guest_id") @db.VarChar(64)
+  articleId String   @map("article_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([guestId, articleId])
+  @@index([guestId])
+  @@index([createdAt])
+  @@map("guest_reads")
+}

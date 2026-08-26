@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.*.local
+.uploads
+coverage
+*.log
+npm-debug.log*
+.DS_Store
+
+# Ingest pipeline working files (out/) and local credentials
+ingest/out/
+ingest/.env
