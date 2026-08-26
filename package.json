@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "build": "npm install && npm run prisma:generate && npm run prisma:deploy",
     "worker": "node src/worker.js",
     "worker:dev": "node --watch src/worker.js",
     "prisma:generate": "prisma generate",

@@ -122,10 +122,9 @@ if (env.STORAGE_PROVIDER === "cloudinary") {
 }
 
 if (env.NODE_ENV === "production") {
-  if (env.EMAIL_PROVIDER !== "resend") {
-    // Gmail SMTP is for local development only — low daily sending limits,
-    // and Google routinely throttles/blocks automated bulk senders on it.
-    crossFieldErrors.push("EMAIL_PROVIDER must be resend in production");
+  if (!["resend", "smtp"].includes(env.EMAIL_PROVIDER)) {
+    // Only block unknown providers; both resend and smtp are valid in production.
+    crossFieldErrors.push("EMAIL_PROVIDER must be 'resend' or 'smtp' in production");
   }
   if (env.STORAGE_PROVIDER === "local") {
     crossFieldErrors.push("STORAGE_PROVIDER=local is not allowed in production");
