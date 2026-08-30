@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { paginationQuery } from "../../utils/pagination.js";
-import { versionContentSchema } from "../articleVersions/articleVersions.validation.js";
+import {
+  versionContentShape,
+  withContentModeRule,
+} from "../articleVersions/articleVersions.validation.js";
 
 const ARTICLE_STATUSES = [
   "DRAFT",
@@ -16,6 +19,14 @@ const taxonomyFields = {
   tagIds: z.array(z.string().uuid()).max(20).optional(),
 };
 
+/** Admin-only: file the article into a magazine. `issueId: null` detaches
+ * it; omitting the field leaves the current attachment untouched. Wire
+ * field stays `issueId` — only the entity it points at was renamed. */
+const magazineFields = {
+  issueId: z.string().uuid().nullable().optional(),
+  sectionLabel: z.string().trim().max(120).nullable().optional(),
+};
+
 export const reviewQueueQuerySchema = { query: paginationQuery };
 
 export const listQuerySchema = {
@@ -23,6 +34,8 @@ export const listQuerySchema = {
     status: z.enum(ARTICLE_STATUSES).optional(),
     publisherId: z.string().uuid().optional(),
     q: z.string().trim().min(1).max(200).optional(),
+    magazineId: z.string().uuid().optional(),
+    volume: z.coerce.number().int().positive().optional(),
   }),
 };
 
@@ -42,12 +55,12 @@ export const createArticleSchema = {
       .optional()
       .transform((v) => v === "true"),
   }),
-  body: versionContentSchema.extend(taxonomyFields),
+  body: withContentModeRule(versionContentShape.extend({ ...taxonomyFields, ...magazineFields })),
 };
 
 export const updateArticleSchema = {
   params: z.object({ id: z.string().uuid() }),
-  body: versionContentSchema.extend(taxonomyFields),
+  body: withContentModeRule(versionContentShape.extend({ ...taxonomyFields, ...magazineFields })),
 };
 
 export const rejectSchema = {

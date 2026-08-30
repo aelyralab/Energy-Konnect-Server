@@ -1,7 +1,7 @@
 /**
  * Notification creation (context doc §39–41). Called from inside the
- * transactions that change article/issue state (admin.service.js,
- * issues.service.js), passing their `tx` through so the notification rows
+ * transactions that change article/magazine state (admin.service.js,
+ * magazines.service.js), passing their `tx` through so the notification rows
  * commit atomically with the state change they describe — approving an
  * article and failing to notify anyone about it (or vice versa) would both
  * be silent bugs.
@@ -61,17 +61,17 @@ export async function notifyArticleRejected(article, reason, db) {
   );
 }
 
-export async function notifyIssuePublished(issue, db) {
+export async function notifyMagazinePublished(magazine, db) {
   const recipients = await repo.findBroadcastRecipients(null, db);
   await repo.createBatch(
     {
       recipients,
-      type: "ISSUE_PUBLISHED",
-      // Notification.articleId has no issue-side equivalent column — the
-      // issue's identity lives in the message text instead of a relation.
+      type: "MAGAZINE_PUBLISHED",
+      // Notification.articleId has no magazine-side equivalent column — the
+      // magazine's identity lives in the message text instead of a relation.
       articleId: null,
-      title: "New issue published",
-      message: `"${issue.title}" (Volume ${issue.volumeNumber}, Issue ${issue.issueNumber}) is now available.`,
+      title: "New magazine published",
+      message: `"${magazine.title}" (Volume ${magazine.volumeNumber}, Issue ${magazine.issueNumber}) is now available.`,
     },
     db,
   );

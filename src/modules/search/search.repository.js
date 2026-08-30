@@ -22,9 +22,9 @@ const LIST_INCLUDE = {
   cover: true,
   topics: { include: { topic: true } },
   tags: { include: { tag: true } },
-  issues: {
+  magazines: {
     include: {
-      issue: {
+      magazine: {
         select: { id: true, slug: true, volumeNumber: true, issueNumber: true, period: true },
       },
     },

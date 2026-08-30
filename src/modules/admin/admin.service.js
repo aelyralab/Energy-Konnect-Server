@@ -12,11 +12,48 @@ import * as articlesService from "../articles/articles.service.js";
 import * as versionsService from "../articleVersions/articleVersions.service.js";
 import * as reviewsRepo from "../reviews/reviews.repository.js";
 import * as notificationsService from "../notifications/notifications.service.js";
+import * as magazinesService from "../magazines/magazines.service.js";
+import * as magazinesRepo from "../magazines/magazines.repository.js";
 
 const TRANSACTION_OPTIONS = { timeout: 10_000 };
 
 async function getArticleOrThrow(id) {
   return articlesService.getByIdWithVersions(id);
+}
+
+/**
+ * Admin-only: file an article into a magazine from the article form itself,
+ * instead of only from the magazine side (§ magazines.service.js). An
+ * article belongs to at most one magazine in practice, so choosing a
+ * different one moves it rather than adding a second attachment.
+ * `magazineId === undefined` (field omitted) leaves the current attachment
+ * untouched; `null` detaches it.
+ */
+async function reconcileMagazine(article, magazineId, sectionLabel) {
+  if (magazineId === undefined) return;
+  const current = article.magazines?.[0] ?? null;
+
+  if (magazineId === null) {
+    if (current) await magazinesService.detachArticle(current.magazineId, article.id);
+    return;
+  }
+
+  if (current && current.magazineId === magazineId) {
+    await magazinesService.attachArticle(magazineId, {
+      articleId: article.id,
+      sectionLabel: sectionLabel !== undefined ? sectionLabel : current.sectionLabel,
+      displayOrder: current.displayOrder,
+    });
+    return;
+  }
+
+  if (current) await magazinesService.detachArticle(current.magazineId, article.id);
+  const displayOrder = await magazinesRepo.nextDisplayOrder(magazineId);
+  await magazinesService.attachArticle(magazineId, {
+    articleId: article.id,
+    sectionLabel: sectionLabel ?? null,
+    displayOrder,
+  });
 }
 
 /**
@@ -82,8 +119,11 @@ export function listReviewQueue(query) {
   return articlesService.listReviewQueue(query);
 }
 
-export function listArticles(query) {
-  return articlesService.listAllForAdmin(query);
+// `q` is the HTTP-facing name; `findAllForAdmin` takes `search` — the
+// service layer owns that boundary rename, same as it does for the
+// `issueId` (wire) -> `magazineId` (domain) split in reconcileMagazine.
+export function listArticles({ q, ...query }) {
+  return articlesService.listAllForAdmin({ ...query, search: q });
 }
 
 export function getArticle(id) {
@@ -93,9 +133,11 @@ export function getArticle(id) {
 /** §30: admin creates like a publisher would, optionally publishing
  * immediately instead of leaving it as a DRAFT. */
 export async function createArticle(actorId, payload, { publish }) {
-  const article = await articlesService.createArticle({ publisherId: actorId, ...payload });
-  if (!publish) return article;
+  const { issueId: magazineId, sectionLabel, ...articlePayload } = payload;
+  const article = await articlesService.createArticle({ publisherId: actorId, ...articlePayload });
+  await reconcileMagazine(article, magazineId, sectionLabel);
 
+  if (!publish) return getArticleOrThrow(article.id);
   return promoteToPublished(article, article.pendingVersion, actorId, "PUBLISHED_DIRECT");
 }
 
@@ -108,11 +150,12 @@ export async function updateArticle(actorId, id, payload) {
     throw ApiError.conflict("This article has no version open for editing", "NO_EDITABLE_VERSION");
   }
 
-  const { topicIds, tagIds, ...versionPayload } = payload;
+  const { topicIds, tagIds, issueId: magazineId, sectionLabel, ...versionPayload } = payload;
   const version = await versionsService.saveContent(versionId, versionPayload);
   await articlesService.setTaxonomy(id, { topicIds, tagIds });
   await articlesService.resyncSnapshotIfUnpublished(article, version);
   await articlesService.refreshSearchText(id);
+  await reconcileMagazine(article, magazineId, sectionLabel);
 
   return getArticleOrThrow(id);
 }
@@ -193,9 +236,10 @@ export async function editPublished(actorId, id, payload) {
     );
   }
 
-  const { topicIds, tagIds, ...versionPayload } = payload;
+  const { topicIds, tagIds, issueId: magazineId, sectionLabel, ...versionPayload } = payload;
   const newVersion = await versionsService.createNextVersion(id, versionPayload, actorId);
   await articlesService.setTaxonomy(id, { topicIds, tagIds });
+  await reconcileMagazine(article, magazineId, sectionLabel);
 
   return promoteToPublished(article, newVersion, actorId, "PUBLISHED_DIRECT");
 }

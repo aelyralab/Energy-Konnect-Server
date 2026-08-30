@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { paginationQuery } from "../../utils/pagination.js";
-import { versionContentSchema } from "../articleVersions/articleVersions.validation.js";
+import {
+  versionContentShape,
+  withContentModeRule,
+} from "../articleVersions/articleVersions.validation.js";
 
 const ARTICLE_STATUSES = [
   "DRAFT",
@@ -24,12 +27,12 @@ export const listQuerySchema = {
 };
 
 export const createArticleSchema = {
-  body: versionContentSchema.extend(taxonomyFields),
+  body: withContentModeRule(versionContentShape.extend(taxonomyFields)),
 };
 
 export const updateArticleSchema = {
   params: z.object({ id: z.string().uuid() }),
-  body: versionContentSchema.extend(taxonomyFields),
+  body: withContentModeRule(versionContentShape.extend(taxonomyFields)),
 };
 
 export const idParamSchema = {

@@ -1,7 +1,7 @@
 /**
  * Shared template for every notification type (context doc §39–41) — one
  * function, not four near-identical ones, since the only thing that differs
- * between ARTICLE_PUBLISHED/ARTICLE_APPROVED/ARTICLE_REJECTED/ISSUE_PUBLISHED
+ * between ARTICLE_PUBLISHED/ARTICLE_APPROVED/ARTICLE_REJECTED/MAGAZINE_PUBLISHED
  * is the title/message text already decided by notifications.service.js.
  *
  * Carries the unsubscribe link "Resend wired in with an unsubscribe link"

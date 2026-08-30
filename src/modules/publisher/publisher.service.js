@@ -33,7 +33,12 @@ function assertSubmitReady(version) {
   if (!version.summary?.trim()) missing.push("summary");
   if (!version.authorName?.trim()) missing.push("authorName");
   if (!version.categoryId) missing.push("categoryId");
-  if (!version.blocks || version.blocks.length === 0) missing.push("blocks");
+
+  if (version.contentMode === "PDF") {
+    if (!version.pdfMediaId) missing.push("pdfMediaId");
+  } else if (!version.blocks || version.blocks.length === 0) {
+    missing.push("blocks");
+  }
 
   if (missing.length > 0) {
     throw ApiError.unprocessable(
