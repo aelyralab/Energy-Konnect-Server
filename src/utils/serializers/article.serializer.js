@@ -28,17 +28,17 @@ export function serializeTags(articleTags) {
   return (articleTags ?? []).map(({ tag }) => ({ id: tag.id, name: tag.name, slug: tag.slug }));
 }
 
-/** An article belongs to at most one issue in practice; the join is 0..n for
- * schema flexibility, so this takes the first entry if present. */
-function serializeIssueContext(issueArticles) {
-  const entry = issueArticles?.[0];
-  if (!entry?.issue) return null;
+/** An article belongs to at most one magazine in practice; the join is 0..n
+ * for schema flexibility, so this takes the first entry if present. */
+function serializeMagazineContext(magazineArticles) {
+  const entry = magazineArticles?.[0];
+  if (!entry?.magazine) return null;
   return {
-    id: entry.issue.id,
-    slug: entry.issue.slug,
-    volume: entry.issue.volumeNumber,
-    issue: entry.issue.issueNumber,
-    period: entry.issue.period,
+    id: entry.magazine.id,
+    slug: entry.magazine.slug,
+    volume: entry.magazine.volumeNumber,
+    issue: entry.magazine.issueNumber,
+    period: entry.magazine.period,
     section: entry.sectionLabel,
   };
 }
@@ -51,12 +51,13 @@ function serializeReadingTime(article) {
 /**
  * @param {object} article
  * @param {object} [options]
- * @param {object|null} [options.issueContext] - pre-built issue block, used by
- *   the publications module where the caller already knows the issue/section
- *   from the join it queried through — passing it in avoids the nested article
- *   query needing its own redundant self-join back to `issues`.
+ * @param {object|null} [options.magazineContext] - pre-built magazine block,
+ *   used by the archive module where the caller already knows the
+ *   magazine/section from the join it queried through — passing it in
+ *   avoids the nested article query needing its own redundant self-join
+ *   back to `magazines`.
  */
-export function serializeArticleSummary(article, { issueContext } = {}) {
+export function serializeArticleSummary(article, { magazineContext } = {}) {
   return {
     id: article.id,
     slug: article.slug,
@@ -67,9 +68,12 @@ export function serializeArticleSummary(article, { issueContext } = {}) {
     category: serializeCategory(article.category),
     topics: serializeTopics(article.topics),
     tags: serializeTags(article.tags),
-    issue: issueContext !== undefined ? issueContext : serializeIssueContext(article.issues),
+    issue:
+      magazineContext !== undefined ? magazineContext : serializeMagazineContext(article.magazines),
     coverImage: serializeMediaUrl(article.cover),
     featured: article.isFeatured,
+    contentMode: article.contentMode,
+    pdfPageCount: article.pdfPageCount,
     readingTime: serializeReadingTime(article),
     publishedAt: article.publishedAt,
   };
@@ -79,6 +83,7 @@ export function serializeArticleDetail(article) {
   const blocks = article.currentPublishedVersion?.blocks ?? [];
   return {
     ...serializeArticleSummary(article),
+    pdfUrl: serializeMediaUrl(article.pdf),
     content: blocks.map((block) => ({
       id: block.id,
       type: block.blockType,

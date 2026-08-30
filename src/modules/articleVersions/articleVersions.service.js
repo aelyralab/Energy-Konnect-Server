@@ -8,7 +8,10 @@
  */
 import prisma from "../../config/db.js";
 import ApiError from "../../utils/ApiError.js";
-import { estimateReadingMinutes } from "../../utils/readingTime.js";
+import {
+  estimateReadingMinutes,
+  estimateReadingMinutesFromPageCount,
+} from "../../utils/readingTime.js";
 import * as repo from "./articleVersions.repository.js";
 
 // PENDING_REVIEW is deliberately excluded: once submitted, a version is
@@ -31,7 +34,10 @@ function assertEditable(version) {
 
 async function createVersion(articleId, versionNumber, payload, createdBy, db) {
   const { blocks, ...metadata } = payload;
-  const readingMinutes = estimateReadingMinutes(blocks);
+  const readingMinutes =
+    metadata.contentMode === "PDF"
+      ? estimateReadingMinutesFromPageCount(metadata.pdfPageCount)
+      : estimateReadingMinutes(blocks);
 
   const version = await repo.create(
     { articleId, versionNumber, createdBy, status: "DRAFT", readingMinutes, ...metadata },
@@ -96,6 +102,9 @@ export async function createRevisionFrom(sourceVersionId, articleId, createdBy, 
       authorBio: source.authorBio,
       categoryId: source.categoryId,
       coverMediaId: source.coverMediaId,
+      contentMode: source.contentMode,
+      pdfMediaId: source.pdfMediaId,
+      pdfPageCount: source.pdfPageCount,
       readingMinutes: source.readingMinutes,
     },
     db,
@@ -117,7 +126,10 @@ export async function saveContent(versionId, payload) {
   assertEditable(version);
 
   const { blocks, ...metadata } = payload;
-  const readingMinutes = estimateReadingMinutes(blocks);
+  const readingMinutes =
+    metadata.contentMode === "PDF"
+      ? estimateReadingMinutesFromPageCount(metadata.pdfPageCount)
+      : estimateReadingMinutes(blocks);
 
   return prisma.$transaction(async (tx) => {
     await repo.updateMetadata(versionId, { ...metadata, readingMinutes }, tx);

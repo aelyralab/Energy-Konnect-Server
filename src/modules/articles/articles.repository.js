@@ -15,9 +15,9 @@ const LIST_INCLUDE = {
   cover: true,
   topics: { include: { topic: true } },
   tags: { include: { tag: true } },
-  issues: {
+  magazines: {
     include: {
-      issue: {
+      magazine: {
         select: { id: true, slug: true, volumeNumber: true, issueNumber: true, period: true },
       },
     },
@@ -27,6 +27,7 @@ const LIST_INCLUDE = {
 
 const DETAIL_INCLUDE = {
   ...LIST_INCLUDE,
+  pdf: true,
   currentPublishedVersion: {
     include: { blocks: { orderBy: { blockOrder: "asc" } } },
   },
@@ -37,7 +38,7 @@ function buildWhere({ category, topic, tag, issue, featured }) {
   if (category) where.category = { slug: category };
   if (topic) where.topics = { some: { topic: { slug: topic } } };
   if (tag) where.tags = { some: { tag: { slug: tag } } };
-  if (issue) where.issues = { some: { issue: { slug: issue } } };
+  if (issue) where.magazines = { some: { magazine: { slug: issue } } };
   if (featured !== undefined) where.isFeatured = featured;
   return where;
 }
@@ -117,10 +118,29 @@ export function findPublishedById(id, db = prisma) {
 const OWNER_DETAIL_INCLUDE = {
   category: true,
   cover: true,
+  pdf: true,
   topics: { include: { topic: true } },
   tags: { include: { tag: true } },
-  pendingVersion: { include: { blocks: { orderBy: { blockOrder: "asc" } } } },
-  currentPublishedVersion: { include: { blocks: { orderBy: { blockOrder: "asc" } } } },
+  magazines: {
+    include: {
+      magazine: {
+        select: {
+          id: true,
+          slug: true,
+          volumeNumber: true,
+          issueNumber: true,
+          title: true,
+          period: true,
+        },
+      },
+    },
+  },
+  pendingVersion: {
+    include: { blocks: { orderBy: { blockOrder: "asc" } }, pdf: true },
+  },
+  currentPublishedVersion: {
+    include: { blocks: { orderBy: { blockOrder: "asc" } }, pdf: true },
+  },
 };
 
 /** Full detail for the owning publisher/admin — both versions, with blocks. */
@@ -229,11 +249,34 @@ export async function findReviewQueue({ page, limit }, db = prisma) {
 }
 
 /** Every article, any owner — admin's unrestricted list, filterable. */
-export async function findAllForAdmin({ status, publisherId, search, page, limit }, db = prisma) {
+export async function findAllForAdmin(
+  { status, publisherId, search, magazineId, volume, page, limit },
+  db = prisma,
+) {
   const where = {
     ...(status ? { status } : {}),
     ...(publisherId ? { publisherId } : {}),
-    ...(search ? { title: { contains: search, mode: "insensitive" } } : {}),
+    ...(search
+      ? {
+          OR: [
+            { title: { contains: search, mode: "insensitive" } },
+            { authorName: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+    // Both narrow the same `magazines` relation — they must merge into one
+    // `some` clause, not two separate spreads (the second would silently
+    // clobber the first, since both use the `magazines` key).
+    ...(magazineId || volume
+      ? {
+          magazines: {
+            some: {
+              ...(magazineId ? { magazineId } : {}),
+              ...(volume ? { magazine: { volumeNumber: volume } } : {}),
+            },
+          },
+        }
+      : {}),
   };
   const [items, total] = await Promise.all([
     db.article.findMany({
@@ -242,6 +285,20 @@ export async function findAllForAdmin({ status, publisherId, search, page, limit
         category: true,
         cover: true,
         publisher: { select: { id: true, name: true, email: true } },
+        magazines: {
+          include: {
+            magazine: {
+              select: {
+                id: true,
+                slug: true,
+                volumeNumber: true,
+                issueNumber: true,
+                title: true,
+                period: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { updatedAt: "desc" },
       ...toSkipTake({ page, limit }),

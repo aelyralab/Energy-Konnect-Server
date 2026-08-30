@@ -137,6 +137,9 @@ function snapshotFieldsOf(version) {
     authorBio: version.authorBio,
     categoryId: version.categoryId,
     coverMediaId: version.coverMediaId,
+    contentMode: version.contentMode,
+    pdfMediaId: version.pdfMediaId,
+    pdfPageCount: version.pdfPageCount,
   };
 }
 

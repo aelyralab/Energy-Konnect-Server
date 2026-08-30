@@ -11,6 +11,23 @@ import {
   serializeMediaUrl,
 } from "./article.serializer.js";
 
+/** An article belongs to at most one magazine in practice — same first-row
+ * convention as article.serializer.js's public serializeIssueContext. Wire
+ * key stays `issue` on ApiOwnerArticle — only the entity name changed. */
+function serializeIssue(magazineArticles) {
+  const entry = magazineArticles?.[0];
+  if (!entry?.magazine) return null;
+  return {
+    id: entry.magazine.id,
+    slug: entry.magazine.slug,
+    volume: entry.magazine.volumeNumber,
+    issue: entry.magazine.issueNumber,
+    title: entry.magazine.title,
+    period: entry.magazine.period,
+    sectionLabel: entry.sectionLabel,
+  };
+}
+
 function serializeVersion(version) {
   if (!version) return null;
   return {
@@ -23,6 +40,10 @@ function serializeVersion(version) {
     author: { name: version.authorName, bio: version.authorBio },
     categoryId: version.categoryId,
     coverMediaId: version.coverMediaId,
+    contentMode: version.contentMode,
+    pdfMediaId: version.pdfMediaId,
+    pdfPageCount: version.pdfPageCount,
+    pdfUrl: serializeMediaUrl(version.pdf),
     readingTime: version.readingMinutes ? `${version.readingMinutes} min read` : null,
     blocks: (version.blocks ?? []).map((block) => ({
       id: block.id,
@@ -43,11 +64,16 @@ export function serializeOwnerArticleSummary(article) {
     slug: article.slug,
     title: article.title,
     status: article.status,
+    contentMode: article.contentMode,
     category: serializeCategory(article.category),
     coverImage: serializeMediaUrl(article.cover),
     isPublished: article.currentPublishedVersionId !== null,
     hasPendingRevision:
       article.pendingVersionId !== null && article.currentPublishedVersionId !== null,
+    // Null when the caller's query didn't load the `magazines` relation
+    // (not every list needs it) rather than when the article truly has none
+    // — same graceful-degrade as serializeIssue's own `?.` chain.
+    issue: serializeIssue(article.magazines),
     createdAt: article.createdAt,
     updatedAt: article.updatedAt,
   };
