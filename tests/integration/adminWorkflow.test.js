@@ -2,7 +2,7 @@
  * Hits the live database directly through the service layer — no HTTP, no
  * mocks. Verifies Phase 7's explicit "done when" bar:
  *   1. approve/reject are covered, including the transaction rollback path.
- *   2. Publishing an issue leaves its DRAFT and PENDING_REVIEW articles
+ *   2. Publishing a magazine leaves its DRAFT and PENDING_REVIEW articles
  *      invisible to the public (§21, rule 18).
  * Plus the surrounding admin workflow: direct publish, edit-published
  * (§31), unpublish/archive, and user role administration.
@@ -14,18 +14,18 @@ import { retireTestUsers } from "../helpers/users.js";
 import { hashPassword } from "../../src/utils/password.js";
 import * as publisherService from "../../src/modules/publisher/publisher.service.js";
 import * as adminService from "../../src/modules/admin/admin.service.js";
-import * as issuesService from "../../src/modules/issues/issues.service.js";
+import * as magazinesService from "../../src/modules/magazines/magazines.service.js";
 import * as usersService from "../../src/modules/users/users.service.js";
 import * as articlesService from "../../src/modules/articles/articles.service.js";
-import * as publicationsService from "../../src/modules/publications/publications.service.js";
+import * as archiveService from "../../src/modules/archive/archive.service.js";
 import * as commentsService from "../../src/modules/comments/comments.service.js";
-import { serializeIssueDetail } from "../../src/utils/serializers/issue.serializer.js";
+import { serializeMagazineDetail } from "../../src/utils/serializers/magazine.serializer.js";
 
 let publisherId;
 let adminId;
 let categoryId;
 const createdArticleIds = [];
-const createdIssueIds = [];
+const createdMagazineIds = [];
 const createdUserIds = [];
 
 beforeAll(async () => {
@@ -61,9 +61,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (createdIssueIds.length > 0) {
-    await prisma.issueArticle.deleteMany({ where: { issueId: { in: createdIssueIds } } });
-    await prisma.publicationIssue.deleteMany({ where: { id: { in: createdIssueIds } } });
+  if (createdMagazineIds.length > 0) {
+    await prisma.magazineArticle.deleteMany({
+      where: { magazineId: { in: createdMagazineIds } },
+    });
+    await prisma.magazine.deleteMany({ where: { id: { in: createdMagazineIds } } });
   }
   if (createdArticleIds.length > 0) {
     await prisma.article.deleteMany({ where: { id: { in: createdArticleIds } } });
@@ -330,77 +332,77 @@ describe("admin workflow — delete", () => {
   });
 });
 
-describe("admin workflow — issues", () => {
-  it("PHASE 7 DONE-WHEN: publishing an issue leaves DRAFT/PENDING_REVIEW articles invisible to the public", async () => {
+describe("admin workflow — magazines", () => {
+  it("PHASE 7 DONE-WHEN: publishing a magazine leaves DRAFT/PENDING_REVIEW articles invisible to the public", async () => {
     const published = await adminService.createArticle(
       adminId,
-      draftPayload({ title: `Issue-published ${Date.now()}` }),
+      draftPayload({ title: `Magazine-published ${Date.now()}` }),
       { publish: true },
     );
     const draft = await publisherService.createDraft(
       publisherId,
-      draftPayload({ title: `Issue-draft ${Date.now()}` }),
+      draftPayload({ title: `Magazine-draft ${Date.now()}` }),
     );
-    const pending = await createSubmittedArticle({ title: `Issue-pending ${Date.now()}` });
+    const pending = await createSubmittedArticle({ title: `Magazine-pending ${Date.now()}` });
     createdArticleIds.push(published.id, draft.id, pending.id);
 
-    const issue = await issuesService.create({
+    const magazine = await magazinesService.create({
       volumeNumber: 900 + Math.floor(Math.random() * 1000),
       issueNumber: 1,
-      title: "Phase 7 test issue",
+      title: "Phase 7 test magazine",
     });
-    createdIssueIds.push(issue.id);
+    createdMagazineIds.push(magazine.id);
 
-    await issuesService.attachArticle(issue.id, {
+    await magazinesService.attachArticle(magazine.id, {
       articleId: published.id,
       sectionLabel: "Cover Story",
       displayOrder: 1,
     });
-    await issuesService.attachArticle(issue.id, {
+    await magazinesService.attachArticle(magazine.id, {
       articleId: draft.id,
       sectionLabel: "Tutorial",
       displayOrder: 2,
     });
-    await issuesService.attachArticle(issue.id, {
+    await magazinesService.attachArticle(magazine.id, {
       articleId: pending.id,
       sectionLabel: "News",
       displayOrder: 3,
     });
 
-    const publishedIssue = await issuesService.publish(issue.id);
-    expect(publishedIssue.status).toBe("PUBLISHED");
+    const publishedMagazine = await magazinesService.publish(magazine.id);
+    expect(publishedMagazine.status).toBe("PUBLISHED");
 
-    // Rule 18: the issue's own status flip never touches article status.
+    // Rule 18: the magazine's own status flip never touches article status.
     const draftAfter = await prisma.article.findUnique({ where: { id: draft.id } });
     const pendingAfter = await prisma.article.findUnique({ where: { id: pending.id } });
     expect(draftAfter.status).toBe("DRAFT");
     expect(pendingAfter.status).toBe("PENDING_REVIEW");
 
-    // And the public API for the now-published issue shows only the
+    // And the public API for the now-published magazine shows only the
     // published article — the filtering to PUBLISHED-only lives in the
     // serializer (context doc §21), same as the real HTTP response, so this
     // goes through it rather than the raw (unfiltered) service return value.
-    const rawIssue = await publicationsService.getPublishedBySlug(issue.slug);
-    const publicIssue = serializeIssueDetail(rawIssue);
-    const slugsShown = publicIssue.contents.map((entry) => entry.article.slug);
+    const rawMagazine = await archiveService.getPublishedBySlug(magazine.slug);
+    const publicMagazine = serializeMagazineDetail(rawMagazine);
+    const slugsShown = publicMagazine.contents.map((entry) => entry.article.slug);
     expect(slugsShown).toContain(published.slug);
     expect(slugsShown).not.toContain(draft.slug);
     expect(slugsShown).not.toContain(pending.slug);
   });
 
-  it("cannot delete an issue that still has articles attached", async () => {
+  it("cannot delete a magazine that still has articles attached", async () => {
     const article = await adminService.createArticle(adminId, draftPayload(), { publish: true });
     createdArticleIds.push(article.id);
-    const issue = await issuesService.create({
+    const magazine = await magazinesService.create({
       volumeNumber: 900 + Math.floor(Math.random() * 1000),
       issueNumber: 2,
-      title: "Non-deletable issue",
+      title: "Non-deletable magazine",
     });
-    createdIssueIds.push(issue.id);
-    await issuesService.attachArticle(issue.id, { articleId: article.id, displayOrder: 1 });
+    createdMagazineIds.push(magazine.id);
+    await magazinesService.attachArticle(magazine.id, { articleId: article.id, displayOrder: 1 });
 
-    await expect(issuesService.remove(issue.id)).rejects.toMatchObject({
-      code: "ISSUE_HAS_ARTICLES",
+    await expect(magazinesService.remove(magazine.id)).rejects.toMatchObject({
+      code: "MAGAZINE_HAS_ARTICLES",
     });
   });
 
@@ -408,16 +410,16 @@ describe("admin workflow — issues", () => {
     const a = await adminService.createArticle(adminId, draftPayload(), { publish: true });
     const b = await adminService.createArticle(adminId, draftPayload(), { publish: true });
     createdArticleIds.push(a.id, b.id);
-    const issue = await issuesService.create({
+    const magazine = await magazinesService.create({
       volumeNumber: 900 + Math.floor(Math.random() * 1000),
       issueNumber: 3,
-      title: "Reorder test issue",
+      title: "Reorder test magazine",
     });
-    createdIssueIds.push(issue.id);
-    await issuesService.attachArticle(issue.id, { articleId: a.id, displayOrder: 1 });
-    await issuesService.attachArticle(issue.id, { articleId: b.id, displayOrder: 2 });
+    createdMagazineIds.push(magazine.id);
+    await magazinesService.attachArticle(magazine.id, { articleId: a.id, displayOrder: 1 });
+    await magazinesService.attachArticle(magazine.id, { articleId: b.id, displayOrder: 2 });
 
-    const reordered = await issuesService.reorderArticles(issue.id, [
+    const reordered = await magazinesService.reorderArticles(magazine.id, [
       { articleId: a.id, displayOrder: 2 },
       { articleId: b.id, displayOrder: 1 },
     ]);

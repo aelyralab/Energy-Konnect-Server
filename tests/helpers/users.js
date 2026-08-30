@@ -6,7 +6,7 @@ import prisma from "../../src/config/db.js";
  * Deliberately *not* a delete. Test files run in parallel against one shared
  * database, and `findBroadcastRecipients` is a global query — it selects every
  * active, opted-in user, including the fixtures another file created seconds
- * ago. `notifyIssuePublished` reads that list and then inserts one notification
+ * ago. `notifyMagazinePublished` reads that list and then inserts one notification
  * row per recipient, inside the publishing transaction.
  *
  * A `user.deleteMany` in one file's afterAll lands in the gap between that read

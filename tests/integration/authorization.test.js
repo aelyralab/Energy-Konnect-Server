@@ -140,7 +140,7 @@ describe("authorization — no token means no access (every protected surface)",
   it.each([
     ["GET", "/api/admin/articles"],
     ["GET", "/api/admin/reviews"],
-    ["GET", "/api/admin/issues"],
+    ["GET", "/api/admin/magazines"],
     ["GET", "/api/admin/users"],
     ["GET", "/api/admin/media"],
     ["GET", "/api/publisher/articles"],
