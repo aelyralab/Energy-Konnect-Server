@@ -4,10 +4,10 @@
  *
  * Modules land here as their phase completes:
  *   Phase 3  /auth  /me
- *   Phase 4  /articles  /categories  /topics  /tags  /publications
+ *   Phase 4  /articles  /categories  /topics  /tags  /magazines
  *   Phase 5  /media
  *   Phase 6  /publisher
- *   Phase 7  /admin  /admin/issues  /admin/users  /admin/media
+ *   Phase 7  /admin  /admin/magazines  /admin/users  /admin/media
  *   Phase 8  /comments
  *   Phase 9  /me/notifications  /notifications
  *   Phase 10 /search
@@ -24,7 +24,7 @@ import topicsRoutes from "../modules/topics/topics.routes.js";
 import topicsAdminRoutes from "../modules/topics/topics.admin.routes.js";
 import tagsRoutes from "../modules/tags/tags.routes.js";
 import tagsAdminRoutes from "../modules/tags/tags.admin.routes.js";
-import publicationsRoutes from "../modules/publications/publications.routes.js";
+import archiveRoutes from "../modules/archive/archive.routes.js";
 import mediaRoutes from "../modules/media/media.routes.js";
 import mediaAdminRoutes from "../modules/media/media.admin.routes.js";
 import publisherRoutes from "../modules/publisher/publisher.routes.js";
@@ -32,7 +32,7 @@ import {
   reviewsRouter as adminReviewsRoutes,
   articlesRouter as adminArticlesRoutes,
 } from "../modules/admin/admin.routes.js";
-import issuesAdminRoutes from "../modules/issues/issues.routes.js";
+import magazinesAdminRoutes from "../modules/magazines/magazines.routes.js";
 import commentsRoutes from "../modules/comments/comments.routes.js";
 import {
   meRouter as notificationsMeRoutes,
@@ -55,7 +55,7 @@ router.use("/articles", articlesRoutes);
 router.use("/categories", categoriesRoutes);
 router.use("/topics", topicsRoutes);
 router.use("/tags", tagsRoutes);
-router.use("/publications", publicationsRoutes);
+router.use("/magazines", archiveRoutes);
 
 router.use("/publisher", publisherRoutes);
 
@@ -64,7 +64,7 @@ router.use("/admin/topics", topicsAdminRoutes);
 router.use("/admin/tags", tagsAdminRoutes);
 router.use("/admin/reviews", adminReviewsRoutes);
 router.use("/admin/articles", adminArticlesRoutes);
-router.use("/admin/issues", issuesAdminRoutes);
+router.use("/admin/magazines", magazinesAdminRoutes);
 router.use("/admin/users", usersAdminRoutes);
 router.use("/admin/media", mediaAdminRoutes);
 

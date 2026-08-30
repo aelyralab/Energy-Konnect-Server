@@ -1,5 +1,5 @@
 import ApiError from "../../utils/ApiError.js";
-import * as repo from "./publications.repository.js";
+import * as repo from "./archive.repository.js";
 
 export async function listPublished(query) {
   const { items, total } = await repo.findPublishedList(query);
@@ -7,7 +7,7 @@ export async function listPublished(query) {
 }
 
 export async function getPublishedBySlug(slug) {
-  const issue = await repo.findPublishedBySlug(slug);
-  if (!issue) throw ApiError.notFound("Publication issue not found");
-  return issue;
+  const magazine = await repo.findPublishedBySlug(slug);
+  if (!magazine) throw ApiError.notFound("Magazine not found");
+  return magazine;
 }

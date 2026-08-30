@@ -12,19 +12,19 @@ const ARTICLE_SUMMARY_INCLUDE = {
 export async function findPublishedList({ page, limit }) {
   const where = { status: "PUBLISHED" };
   const [items, total] = await Promise.all([
-    prisma.publicationIssue.findMany({
+    prisma.magazine.findMany({
       where,
       include: { cover: true },
       orderBy: [{ volumeNumber: "desc" }, { issueNumber: "desc" }],
       ...toSkipTake({ page, limit }),
     }),
-    prisma.publicationIssue.count({ where }),
+    prisma.magazine.count({ where }),
   ]);
   return { items, total };
 }
 
 export function findPublishedBySlug(slug) {
-  return prisma.publicationIssue.findFirst({
+  return prisma.magazine.findFirst({
     where: { slug, status: "PUBLISHED" },
     include: {
       cover: true,
