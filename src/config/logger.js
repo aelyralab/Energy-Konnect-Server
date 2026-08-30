@@ -1,11 +1,11 @@
 /**
  * Application logger (pino).
  *
- * Pretty-printed in development, newline-delimited JSON everywhere else so a
- * log shipper can parse it. Silent under test unless LOG_LEVEL says otherwise.
+ * Pretty-printed in all environments for readable logs. Silent under test
+ * unless LOG_LEVEL says otherwise.
  */
 import pino from "pino";
-import env, { isDevelopment, isTest } from "./env.js";
+import env, { isTest } from "./env.js";
 
 const redactPaths = [
   "req.headers.authorization",
@@ -25,17 +25,17 @@ const logger = pino({
   level: isTest ? (process.env.LOG_LEVEL ?? "silent") : env.LOG_LEVEL,
   redact: { paths: redactPaths, censor: "[redacted]" },
   base: undefined, // drop pid/hostname noise; the platform adds its own
-  transport: isDevelopment
-    ? {
+  transport: isTest
+    ? undefined
+    : {
         target: "pino-pretty",
         options: {
-          colorize: true,
+          colorize: false,
           translateTime: "HH:MM:ss",
           ignore: "req,res,responseTime",
           messageFormat: "{msg}",
         },
-      }
-    : undefined,
+      },
 });
 
 export default logger;
