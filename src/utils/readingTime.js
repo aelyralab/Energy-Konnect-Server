@@ -45,4 +45,15 @@ export function estimateReadingMinutes(blocks) {
   return Math.max(1, Math.ceil(totalWords / WORDS_PER_MINUTE));
 }
 
+// A magazine page carries roughly 2 minutes of reading at normal pace —
+// denser than a web article's block text, since it includes sidebars,
+// pull-quotes and captions the block estimate above would count separately.
+const MINUTES_PER_PDF_PAGE = 2;
+
+/** @param {number | null | undefined} pageCount */
+export function estimateReadingMinutesFromPageCount(pageCount) {
+  if (!pageCount || pageCount < 1) return 1;
+  return Math.max(1, Math.round(pageCount * MINUTES_PER_PDF_PAGE));
+}
+
 export default estimateReadingMinutes;

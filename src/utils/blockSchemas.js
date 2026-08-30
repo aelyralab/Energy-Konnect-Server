@@ -58,7 +58,7 @@ const BLOCK_CONTENT_SCHEMAS = {
   }),
 
   list: z.object({
-    style: z.enum(["ordered", "unordered"]),
+    style: z.enum(["ordered", "unordered", "roman", "letter"]),
     items: z.array(z.string().trim().min(1)).min(1, "At least one item is required"),
   }),
 
