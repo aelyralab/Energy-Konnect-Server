@@ -14,7 +14,10 @@ function refreshCookieOptions() {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: "lax",
+    // Cross-site in production (client on a different registrable domain than
+    // the API) — "none" is required for the cookie to ride along on fetch()
+    // at all, and browsers only honor "none" when paired with Secure.
+    sameSite: isProduction ? "none" : "lax",
     signed: true,
     path: REFRESH_COOKIE_PATH,
     domain: env.COOKIE_DOMAIN,
