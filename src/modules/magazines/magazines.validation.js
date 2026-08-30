@@ -17,6 +17,7 @@ export const idParamSchema = { params: z.object({ id: z.string().uuid() }) };
 const editorialFields = {
   editorialTitle: z.string().trim().max(300).optional(),
   editorialAuthor: z.string().trim().max(200).optional(),
+  editorialAuthorImageId: z.string().uuid().optional(),
   editorialSummary: z.string().trim().max(2000).optional(),
   editorialBody: blocksArraySchema.optional(),
 };
@@ -49,6 +50,7 @@ export const updateMagazineSchema = {
       pdfMediaId: z.string().uuid().nullable().optional(),
       editorialTitle: z.string().trim().max(300).nullable().optional(),
       editorialAuthor: z.string().trim().max(200).nullable().optional(),
+      editorialAuthorImageId: z.string().uuid().nullable().optional(),
       editorialSummary: z.string().trim().max(2000).nullable().optional(),
       editorialBody: blocksArraySchema.nullable().optional(),
     })

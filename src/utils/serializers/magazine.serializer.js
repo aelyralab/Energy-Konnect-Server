@@ -51,6 +51,7 @@ export function serializeMagazineDetail(magazine) {
       ? {
           title: magazine.editorialTitle,
           author: magazine.editorialAuthor,
+          authorImage: magazine.editorialAuthorImage?.url ?? null,
           summary: magazine.editorialSummary,
           body: magazine.editorialBody.map((block, index) => ({
             id: String(index),

@@ -4,6 +4,7 @@ import { toSkipTake } from "../../utils/pagination.js";
 const DETAIL_INCLUDE = {
   cover: true,
   pdf: true,
+  editorialAuthorImage: true,
   articles: {
     orderBy: { displayOrder: "asc" },
     include: {

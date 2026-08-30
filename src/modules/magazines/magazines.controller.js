@@ -18,6 +18,7 @@ function serializeMagazine(magazine) {
     editorial: {
       title: magazine.editorialTitle,
       author: magazine.editorialAuthor,
+      authorImage: magazine.editorialAuthorImage?.url ?? null,
       summary: magazine.editorialSummary,
       // Plain JSONB, not a table — no persisted id, unlike an article's
       // ArticleContentBlock rows. Synthesize one from array position so the

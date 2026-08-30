@@ -263,12 +263,13 @@ model MediaAsset {
 
   uploader User? @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
 
-  articleCovers Article[]          @relation("ArticleCover")
-  versionCovers ArticleVersion[]   @relation("VersionCover")
-  magazineCovers Magazine[] @relation("MagazineCover")
-  magazinePdfs   Magazine[] @relation("MagazinePdf")
-  articlePdfs   Article[]          @relation("ArticlePdf")
-  versionPdfs   ArticleVersion[]   @relation("VersionPdf")
+  articleCovers                 Article[]        @relation("ArticleCover")
+  versionCovers                 ArticleVersion[] @relation("VersionCover")
+  magazineCovers                Magazine[]       @relation("MagazineCover")
+  magazinePdfs                  Magazine[]       @relation("MagazinePdf")
+  magazineEditorialAuthorImages Magazine[]       @relation("MagazineEditorialAuthorImage")
+  articlePdfs                   Article[]        @relation("ArticlePdf")
+  versionPdfs                   ArticleVersion[] @relation("VersionPdf")
 
   @@index([uploadedBy, createdAt])
   @@map("media_assets")
@@ -464,19 +465,21 @@ model Magazine {
   // shape ({ blockType, content }[]) but as JSONB rather than a table, since
   // ArticleContentBlock is keyed off articleVersionId and an editorial has
   // no version.
-  editorialTitle   String? @map("editorial_title") @db.VarChar(300)
-  editorialAuthor  String? @map("editorial_author") @db.VarChar(200)
-  editorialSummary String? @map("editorial_summary")
-  editorialBody    Json?   @map("editorial_body") @db.JsonB
+  editorialTitle         String? @map("editorial_title") @db.VarChar(300)
+  editorialAuthor        String? @map("editorial_author") @db.VarChar(200)
+  editorialAuthorImageId String? @map("editorial_author_image_id") @db.Uuid
+  editorialSummary       String? @map("editorial_summary")
+  editorialBody          Json?   @map("editorial_body") @db.JsonB
 
   status      MagazineStatus @default(DRAFT)
   publishedAt DateTime?      @map("published_at")
   createdAt   DateTime       @default(now()) @map("created_at")
   updatedAt   DateTime       @updatedAt @map("updated_at")
 
-  cover    MediaAsset?       @relation("MagazineCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
-  pdf      MediaAsset?       @relation("MagazinePdf", fields: [pdfMediaId], references: [id], onDelete: SetNull)
-  articles MagazineArticle[]
+  cover                MediaAsset?       @relation("MagazineCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  pdf                  MediaAsset?       @relation("MagazinePdf", fields: [pdfMediaId], references: [id], onDelete: SetNull)
+  editorialAuthorImage MediaAsset?       @relation("MagazineEditorialAuthorImage", fields: [editorialAuthorImageId], references: [id], onDelete: SetNull)
+  articles             MagazineArticle[]
 
   @@unique([volumeNumber, issueNumber])
   @@index([status, publishedAt])

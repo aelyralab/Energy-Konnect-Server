@@ -29,6 +29,7 @@ export function findPublishedBySlug(slug) {
     include: {
       cover: true,
       pdf: true,
+      editorialAuthorImage: true,
       articles: {
         orderBy: { displayOrder: "asc" },
         include: { article: { include: ARTICLE_SUMMARY_INCLUDE } },
