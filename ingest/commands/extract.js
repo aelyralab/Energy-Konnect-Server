@@ -20,10 +20,17 @@ import config, { paths } from "../config.js";
 import { extractBoth, listPdfs, needsOcr } from "../lib/pdftext.js";
 import { detectFurniture } from "../lib/clean.js";
 
-/** A stable, filesystem-safe key for an issue, derived from its source path. */
-export function issueKeyFor(pdfPath) {
-  const volume = path.basename(path.dirname(pdfPath));
-  const file = path.basename(pdfPath, ".pdf");
+/**
+ * A stable, filesystem-safe key for an issue, derived from its source path.
+ *
+ * Extension-agnostic on purpose: the DOCX track keeps its sources in a tree
+ * that mirrors this one's volume folders, so `Volume 1/V1 foo.docx` and
+ * `Volume 1/V1 foo.pdf` produce the same key — and therefore share one
+ * manifest, one ledger entry and one structured/ directory.
+ */
+export function issueKeyFor(sourcePath) {
+  const volume = path.basename(path.dirname(sourcePath));
+  const file = path.basename(sourcePath, path.extname(sourcePath));
   return `${volume}--${file}`
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")

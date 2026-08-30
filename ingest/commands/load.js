@@ -8,9 +8,9 @@
  *
  * Per issue:
  *   1. upload the source PDF   -> pdfMediaId
- *   2. POST /admin/issues      -> issueId
+ *   2. POST /admin/magazines      -> issueId
  *   3. POST /admin/articles    -> articleId, once per article, as DRAFT
- *   4. POST /admin/issues/:id/articles to attach with sectionLabel + order
+ *   4. POST /admin/magazines/:id/articles to attach with sectionLabel + order
  *
  * Everything is recorded in out/ledger.json as it happens, and re-running skips
  * what already exists. The issue is left unpublished: publishing is a human

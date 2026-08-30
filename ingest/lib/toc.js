@@ -26,7 +26,7 @@ const PERIOD_RE = new RegExp(
  * heuristic: Volume 1 prints them in caps ("COVER ARTICLE"), Volume 2 in title
  * case ("Cover Story"), and a title in caps would otherwise be misread.
  *
- * The right-hand value is what goes into IssueArticle.sectionLabel, normalised
+ * The right-hand value is what goes into MagazineArticle.sectionLabel, normalised
  * to the five labels named in schema.prisma.
  */
 const SECTIONS = [
@@ -126,7 +126,7 @@ export function parseCover(pages, fileName, volumeFolder) {
 /**
  * The cover's display title: the text before the TOC that is neither the
  * masthead nor the volume line. Heuristic and often imperfect — `theme` is
- * optional on PublicationIssue, so a miss costs nothing.
+ * optional on Magazine, so a miss costs nothing.
  */
 function guessCoverTitle(firstPage) {
   const lines = firstPage.split(/\r?\n/).map((line) => line.trim());

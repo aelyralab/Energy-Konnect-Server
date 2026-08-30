@@ -34,6 +34,18 @@ export const config = {
   papersDir: process.env.INGEST_PAPERS_DIR ?? "E:/Aelyra Labs/Papers",
   outDir: process.env.INGEST_OUT_DIR ?? path.join(here, "out"),
 
+  // The DOCX track's source tree. It mirrors papersDir's volume folders
+  // ("Volume 1/", "Volume 2/") on purpose: issueKeyFor() derives the key from
+  // <parent folder>--<basename>, so a .docx sitting beside its .pdf's volume
+  // folder resolves to the same issueKey and therefore reuses the same
+  // manifest, ledger entry and structured/ directory.
+  docxDir: process.env.INGEST_DOCX_DIR ?? "E:/Aelyra Labs/Papers/docx",
+
+  // A Word image below either of these is page furniture — a rule, a spacer,
+  // a hairline. This issue's image6-9.png are 169-185 bytes.
+  minImageBytes: num(process.env.INGEST_MIN_IMAGE_BYTES, 2048),
+  minImageEdge: num(process.env.INGEST_MIN_IMAGE_EDGE, 100),
+
   // pdftotext ships with poppler. On Windows it is usually only on Git Bash's
   // PATH, not Node's, so the resolver in lib/pdftext.js probes known locations.
   pdftotextBin: process.env.PDFTOTEXT_BIN ?? null,
@@ -62,6 +74,7 @@ export const paths = {
   manifest: (issueKey) => path.join(config.outDir, "manifests", `${issueKey}.json`),
   manifestDir: path.join(config.outDir, "manifests"),
   structured: (issueKey) => path.join(config.outDir, "structured", issueKey),
+  docx: (issueKey) => path.join(config.outDir, "docx", issueKey),
   ledger: path.join(config.outDir, "ledger.json"),
   report: path.join(config.outDir, "report.md"),
 };
