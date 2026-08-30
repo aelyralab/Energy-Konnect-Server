@@ -112,7 +112,7 @@ const TOPICS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Publication issues — client/src/data/magazines.js
+// Magazines — formerly ported from client/src/data/magazines.js (deleted)
 // ---------------------------------------------------------------------------
 
 const ISSUES = [
@@ -885,7 +885,7 @@ async function seedIssues() {
   const byKey = {};
   for (const issue of ISSUES) {
     const slug = slugify(`Volume ${issue.volumeNumber} Issue ${issue.issueNumber}`);
-    const row = await prisma.publicationIssue.upsert({
+    const row = await prisma.magazine.upsert({
       where: {
         volumeNumber_issueNumber: {
           volumeNumber: issue.volumeNumber,
@@ -907,7 +907,7 @@ async function seedIssues() {
     });
     byKey[issue.key] = row;
   }
-  console.log(`  ${ISSUES.length} publication issues ready`);
+  console.log(`  ${ISSUES.length} magazines ready`);
   return byKey;
 }
 
@@ -1050,9 +1050,9 @@ async function seedArticles({ users, categories, topics, tags, issues }) {
 
       const issue = issues[article.issueKey];
       if (issue) {
-        await tx.issueArticle.create({
+        await tx.magazineArticle.create({
           data: {
-            issueId: issue.id,
+            magazineId: issue.id,
             articleId: createdArticle.id,
             sectionLabel: article.sectionLabel,
             displayOrder: article.displayOrder,
@@ -1076,7 +1076,7 @@ async function main() {
   const topics = await seedTopics();
   const tags = await seedTags();
 
-  console.log("Publication issues:");
+  console.log("Magazines:");
   const issues = await seedIssues();
 
   console.log("Articles:");

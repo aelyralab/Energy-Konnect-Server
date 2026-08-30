@@ -51,7 +51,7 @@ enum VersionStatus {
   SUPERSEDED
 }
 
-enum IssueStatus {
+enum MagazineStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
@@ -70,6 +70,11 @@ enum BlockType {
   reference
 }
 
+enum ContentMode {
+  BLOCKS
+  PDF
+}
+
 enum ReviewActionType {
   SUBMITTED
   APPROVED
@@ -84,7 +89,7 @@ enum NotificationType {
   ARTICLE_PUBLISHED
   ARTICLE_APPROVED
   ARTICLE_REJECTED
-  ISSUE_PUBLISHED
+  MAGAZINE_PUBLISHED
 }
 
 enum EmailStatus {
@@ -260,8 +265,10 @@ model MediaAsset {
 
   articleCovers Article[]          @relation("ArticleCover")
   versionCovers ArticleVersion[]   @relation("VersionCover")
-  issueCovers   PublicationIssue[] @relation("IssueCover")
-  issuePdfs     PublicationIssue[] @relation("IssuePdf")
+  magazineCovers Magazine[] @relation("MagazineCover")
+  magazinePdfs   Magazine[] @relation("MagazinePdf")
+  articlePdfs   Article[]          @relation("ArticlePdf")
+  versionPdfs   ArticleVersion[]   @relation("VersionPdf")
 
   @@index([uploadedBy, createdAt])
   @@map("media_assets")
@@ -289,6 +296,14 @@ model Article {
   publisherId  String  @map("publisher_id") @db.Uuid
   coverMediaId String? @map("cover_media_id") @db.Uuid
 
+  // Whether this article's body is the block builder or an uploaded PDF
+  // (§ dual-mode articles: the 21 legacy magazine PDFs come in as PDF mode;
+  // articles authored natively use BLOCKS). Metadata fields above are shared
+  // by both modes unchanged — only the body differs.
+  contentMode  ContentMode @default(BLOCKS) @map("content_mode")
+  pdfMediaId   String?     @map("pdf_media_id") @db.Uuid
+  pdfPageCount Int?        @map("pdf_page_count")
+
   status     ArticleStatus @default(DRAFT)
   isFeatured Boolean       @default(false) @map("is_featured")
 
@@ -314,6 +329,7 @@ model Article {
   publisher User        @relation("ArticlePublisher", fields: [publisherId], references: [id], onDelete: Restrict)
   category  Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   cover     MediaAsset? @relation("ArticleCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  pdf       MediaAsset? @relation("ArticlePdf", fields: [pdfMediaId], references: [id], onDelete: SetNull)
 
   // Two nullable pointers into the version history. The cycle between Article
   // and ArticleVersion is fine in Postgres because both sides are nullable:
@@ -324,7 +340,7 @@ model Article {
   versions      ArticleVersion[]      @relation("ArticleVersions")
   topics        ArticleTopic[]
   tags          ArticleTag[]
-  issues        IssueArticle[]
+  magazines     MagazineArticle[]
   comments      Comment[]
   reviewActions ArticleReviewAction[]
   notifications Notification[]
@@ -354,6 +370,12 @@ model ArticleVersion {
   categoryId   String? @map("category_id") @db.Uuid
   coverMediaId String? @map("cover_media_id") @db.Uuid
 
+  // Mirrors Article.contentMode/pdfMediaId/pdfPageCount — the version is the
+  // editable truth, the Article row is the denormalized snapshot.
+  contentMode  ContentMode @default(BLOCKS) @map("content_mode")
+  pdfMediaId   String?     @map("pdf_media_id") @db.Uuid
+  pdfPageCount Int?        @map("pdf_page_count")
+
   // Derived from block word count on save; surfaces as "11 min read".
   readingMinutes Int? @map("reading_minutes")
 
@@ -366,6 +388,7 @@ model ArticleVersion {
   creator  User        @relation("VersionCreator", fields: [createdBy], references: [id], onDelete: Restrict)
   category Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   cover    MediaAsset? @relation("VersionCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  pdf      MediaAsset? @relation("VersionPdf", fields: [pdfMediaId], references: [id], onDelete: SetNull)
 
   blocks        ArticleContentBlock[]
   reviewActions ArticleReviewAction[]
@@ -419,10 +442,10 @@ model ArticleReviewAction {
 }
 
 // ---------------------------------------------------------------------------
-// Publication issues
+// Magazines
 // ---------------------------------------------------------------------------
 
-model PublicationIssue {
+model Magazine {
   id           String  @id @default(uuid()) @db.Uuid
   slug         String  @unique @db.VarChar(220)
   volumeNumber Int     @map("volume_number")
@@ -435,34 +458,46 @@ model PublicationIssue {
   coverMediaId String? @map("cover_media_id") @db.Uuid
   pdfMediaId   String? @map("pdf_media_id") @db.Uuid
 
-  status      IssueStatus @default(DRAFT)
-  publishedAt DateTime?   @map("published_at")
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+  // The editorial is a first-class part of the magazine, not an Article —
+  // it is always exactly one per magazine, always first, never versioned,
+  // reviewed or commented on. `editorialBody` mirrors ArticleContentBlock's
+  // shape ({ blockType, content }[]) but as JSONB rather than a table, since
+  // ArticleContentBlock is keyed off articleVersionId and an editorial has
+  // no version.
+  editorialTitle   String? @map("editorial_title") @db.VarChar(300)
+  editorialAuthor  String? @map("editorial_author") @db.VarChar(200)
+  editorialSummary String? @map("editorial_summary")
+  editorialBody    Json?   @map("editorial_body") @db.JsonB
 
-  cover    MediaAsset?    @relation("IssueCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
-  pdf      MediaAsset?    @relation("IssuePdf", fields: [pdfMediaId], references: [id], onDelete: SetNull)
-  articles IssueArticle[]
+  status      MagazineStatus @default(DRAFT)
+  publishedAt DateTime?      @map("published_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  cover    MediaAsset?       @relation("MagazineCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  pdf      MediaAsset?       @relation("MagazinePdf", fields: [pdfMediaId], references: [id], onDelete: SetNull)
+  articles MagazineArticle[]
 
   @@unique([volumeNumber, issueNumber])
   @@index([status, publishedAt])
-  @@map("publication_issues")
+  @@map("magazines")
 }
 
-model IssueArticle {
-  issueId      String  @map("issue_id") @db.Uuid
+model MagazineArticle {
+  magazineId   String  @map("magazine_id") @db.Uuid
   articleId    String  @map("article_id") @db.Uuid
   displayOrder Int     @default(0) @map("display_order")
-  // "Editorial", "Cover Story", "Tutorial", "Consumer Desk", "News and Events"
+  // "Cover Story", "Tutorial", "Consumer Desk", "News and Events" — never
+  // "Editorial", which now lives on Magazine.editorial* instead.
   sectionLabel String? @map("section_label") @db.VarChar(120)
 
-  issue   PublicationIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  article Article          @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  magazine Magazine @relation(fields: [magazineId], references: [id], onDelete: Cascade)
+  article  Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
 
-  @@id([issueId, articleId])
-  @@index([issueId, displayOrder])
+  @@id([magazineId, articleId])
+  @@index([magazineId, displayOrder])
   @@index([articleId])
-  @@map("issue_articles")
+  @@map("magazine_articles")
 }
 
 // ---------------------------------------------------------------------------
