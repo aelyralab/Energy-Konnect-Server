@@ -45,7 +45,7 @@ The doc is thorough but has seven points it does not decide. These are my resolu
 | `coverImage`                              | `articles.cover_media_id → media_assets`                                                                                                |
 | `readingTime` ("11 min read")             | `article_versions.reading_minutes`, computed from block word count on save                                                              |
 | `featured`                                | `articles.is_featured`                                                                                                                  |
-| `section` ("Tutorial", "Cover Story")     | Already exists as `issue_articles.section_label` (§20); the API surfaces it on the article payload when the article belongs to an issue |
+| `section` ("Tutorial", "Cover Story")     | Already exists as `issue_articles.section_label` (§20); the API surfaces it on the article payload when the article belongs to a magazine |
 | `topics: [names]` + `topicSlugs: [slugs]` | Both derived from the `article_topics` join; API returns `[{id, name, slug}]` and the client maps                                       |
 
 **One conflict needs a frontend change.** The mock stores blocks flat — `{type:"heading", level:2, text:"…"}` — while §35 of the doc specifies `{id, type, order, data:{level, text}}`. I am building the documented shape (it is the correct one: block identity and ordering are relational, payload is JSONB). The client's `ArticleContentRenderer` will need a small adjustment to read `block.data.*`. Two other mismatches to fold in at the same time: the mock's list block uses `ordered: true|false` where the doc uses `style: "ordered"|"unordered"`, and the mock's image block uses `src` where the doc uses `media_id`. I will follow the doc and note the exact client diff when we reach Phase 5.
@@ -72,7 +72,7 @@ Sixteen models. Beyond the doc's §43 list I add `refresh_tokens` (needed for re
 Role                USER | PUBLISHER | ADMIN
 ArticleStatus       DRAFT | PENDING_REVIEW | PUBLISHED | REJECTED | UNPUBLISHED | ARCHIVED
 VersionStatus       DRAFT | PENDING_REVIEW | PUBLISHED | REJECTED | SUPERSEDED
-IssueStatus         DRAFT | PUBLISHED | ARCHIVED
+MagazineStatus      DRAFT | PUBLISHED | ARCHIVED
 BlockType           heading | paragraph | image | quote | callout | table | figure | list | formula | reference
 ReviewAction        SUBMITTED | APPROVED | REJECTED | WITHDRAWN | PUBLISHED_DIRECT | UNPUBLISHED | ARCHIVED
 NotificationType    ARTICLE_PUBLISHED | ARTICLE_APPROVED | ARTICLE_REJECTED | ISSUE_PUBLISHED
@@ -110,12 +110,12 @@ tags                      id, name, slug(unique), created_at
 article_topics            article_id, topic_id  @@id([article_id, topic_id])
 article_tags              article_id, tag_id    @@id([article_id, tag_id])
 
-publication_issues        id, slug(unique), volume_number, issue_number, title, period, theme,
+magazines                 id, slug(unique), volume_number, issue_number, title, period, theme,
                           description, cover_media_id, pdf_media_id, status, published_at,
                           created_at, updated_at
                           @@unique([volume_number, issue_number])
-issue_articles            issue_id, article_id, display_order, section_label
-                          @@id([issue_id, article_id])
+magazine_articles         magazine_id, article_id, display_order, section_label
+                          @@id([magazine_id, article_id])
 
 comments                  id, article_id, user_id(onDelete: Restrict), content, is_deleted,
                           created_at, updated_at
@@ -133,7 +133,7 @@ guest_reads               id, guest_id, article_id, created_at  @@unique([guest_
 - **`articles.current_published_version_id` / `pending_version_id`** are the whole §29 mechanism. Both are nullable FKs to `article_versions`, and `article_versions.article_id` points back — a cycle Prisma handles with named relations. The public reader resolves content strictly through `current_published_version_id`; nothing else is ever served publicly.
 - **Comments use `onDelete: Restrict`** on `user_id`. Rule 23 says comments must survive user deletion — `Restrict` makes a cascading delete _impossible at the database level_, not merely discouraged. Deactivation sets `users.is_active = false`; the comment API returns `author: null` and the client renders "Deleted User".
 - **Full-text search.** Prisma cannot express `tsvector`, so `search_vector` is added in a hand-written migration as `GENERATED ALWAYS AS (to_tsvector('english', search_text)) STORED` with a GIN index. `search_text` is a plain column the article service rebuilds on every save from title + subtitle + summary + author name + category + topic names + tag names — exactly the §42 field list. Queries run through `$queryRaw` with `websearch_to_tsquery` and `ts_rank`.
-- **Indexes:** `articles(status, published_at DESC)` for the public feed, `articles(category_id)`, `articles(publisher_id, status)` for the publisher dashboard, `comments(article_id, created_at)`, `issue_articles(issue_id, display_order)`, `email_notifications(status, created_at)` for the outbox claim.
+- **Indexes:** `articles(status, published_at DESC)` for the public feed, `articles(category_id)`, `articles(publisher_id, status)` for the publisher dashboard, `comments(article_id, created_at)`, `magazine_articles(magazine_id, display_order)`, `email_notifications(status, created_at)` for the outbox claim.
 - **`citext`** for `users.email` so `Nilanjan@…` and `nilanjan@…` are one account.
 
 ---
@@ -164,7 +164,7 @@ server/
 │   │   └── error.middleware.js     # single place that converts errors to HTTP
 │   ├── modules/                    # each: *.routes / *.controller / *.service / *.repository / *.validation
 │   │   ├── auth/ users/ articles/ articleVersions/ contentBlocks/
-│   │   ├── categories/ topics/ tags/ publications/ comments/
+│   │   ├── categories/ topics/ tags/ magazines/ archive/ comments/
 │   │   ├── media/ reviews/ notifications/ search/
 │   │   ├── publisher/              # publisher-scoped routes over the article services
 │   │   └── admin/                  # admin-scoped routes over the article services
@@ -199,7 +199,7 @@ GET    /api/articles                  ?page&limit&category&topic&tag&issue&featu
 GET    /api/articles/:slug            guest-limited; PUBLISHED only
 GET    /api/articles/:slug/comments   ?page&limit
 GET    /api/categories                GET /api/topics                GET /api/tags
-GET    /api/publications              GET /api/publications/:slug
+GET    /api/magazines                 GET /api/magazines/:slug
 GET    /api/search                    ?q&page&limit&category&topic&tag
 ```
 
@@ -255,10 +255,10 @@ POST   /api/admin/articles/:id/unpublish        POST /api/admin/articles/:id/arc
 GET    /api/admin/articles/:id/versions         GET .../versions/:versionId
 GET    /api/admin/articles/:id/history
 CRUD   /api/admin/categories  /api/admin/topics  /api/admin/tags
-CRUD   /api/admin/issues
-POST   /api/admin/issues/:id/articles           { articleId, sectionLabel, displayOrder }
-PATCH  /api/admin/issues/:id/articles/reorder   DELETE /api/admin/issues/:id/articles/:articleId
-POST   /api/admin/issues/:id/publish            POST /api/admin/issues/:id/archive
+CRUD   /api/admin/magazines
+POST   /api/admin/magazines/:id/articles        { articleId, sectionLabel, displayOrder }
+PATCH  /api/admin/magazines/:id/articles/reorder DELETE /api/admin/magazines/:id/articles/:articleId
+POST   /api/admin/magazines/:id/publish         POST /api/admin/magazines/:id/archive
 GET    /api/admin/users                         PATCH /api/admin/users/:id  { role?, isActive? }
 DELETE /api/admin/comments/:id
 GET    /api/admin/media                         POST /api/admin/media
@@ -303,7 +303,7 @@ Argon2id hashing. Register → create user (`USER`, `email_verified: false`) →
 
 ### Phase 4 — Taxonomy + public read endpoints
 
-Categories, topics, tags: public list endpoints plus admin CRUD with slug generation and collision handling. Public article list with filtering and pagination (`PUBLISHED` only, enforced in the repository so no caller can forget). Public single article by slug resolving current version + ordered blocks + topics + tags + issue context, in the §35 shape. Guest limit middleware and `guest_reads`. Redis caching on the taxonomy lists.
+Categories, topics, tags: public list endpoints plus admin CRUD with slug generation and collision handling. Public article list with filtering and pagination (`PUBLISHED` only, enforced in the repository so no caller can forget). Public single article by slug resolving current version + ordered blocks + topics + tags + magazine context, in the §35 shape. Guest limit middleware and `guest_reads`. Redis caching on the taxonomy lists.
 
 **Done when:** the client can drop `src/data/*.js` and render the homepage and an article from the API; requesting a third distinct article as a guest returns `GUEST_LIMIT_REACHED`; a `DRAFT` slug returns 404, not 403 (a 403 confirms the article exists).
 
@@ -321,9 +321,9 @@ Create draft, update, submit with the §26 validation gate (title, summary, auth
 
 ### Phase 7 — Admin workflow
 
-Review queue. Approve: one transaction — article `PUBLISHED`, `current_published_version_id` = pending, previous version `SUPERSEDED`, `pending_version_id` = null, version `PUBLISHED`, versioned metadata copied onto the article row, `search_text` rebuilt, `APPROVED` review action, notification event queued. Reject with a required reason, both article and version to `REJECTED`, audit row written. Direct publish. Admin edit of a published article, which creates a new version and publishes it in one step rather than overwriting (§31). Unpublish, archive. Issue management with article attach / reorder / section labels. User administration.
+Review queue. Approve: one transaction — article `PUBLISHED`, `current_published_version_id` = pending, previous version `SUPERSEDED`, `pending_version_id` = null, version `PUBLISHED`, versioned metadata copied onto the article row, `search_text` rebuilt, `APPROVED` review action, notification event queued. Reject with a required reason, both article and version to `REJECTED`, audit row written. Direct publish. Admin edit of a published article, which creates a new version and publishes it in one step rather than overwriting (§31). Unpublish, archive. Magazine management with article attach / reorder / section labels. User administration.
 
-**Done when:** approve/reject are covered including the transaction rollback path, and a test asserts that publishing an issue leaves its `DRAFT` and `PENDING_REVIEW` articles invisible to the public (§21, rule 18).
+**Done when:** approve/reject are covered including the transaction rollback path, and a test asserts that publishing a magazine leaves its `DRAFT` and `PENDING_REVIEW` articles invisible to the public (§21, rule 18).
 
 ### Phase 8 — Comments
 
@@ -373,8 +373,8 @@ Fill the §46 Phase 11 checklist — all eight named business rules get an expli
 | 14  | Existing published version stays public while a revision is pending | `publisherWorkflow.test.js` "the public-serving guarantee"                                                                                                                                                                   |
 | 15  | Admin can directly edit published articles                          | `adminWorkflow.test.js` "editPublished creates a new version and publishes it immediately"                                                                                                                                   |
 | 16  | Admin approval makes the pending version public                     | `adminWorkflow.test.js` "approve — promotes a submitted version to PUBLISHED: pointers, status, snapshot, audit row"                                                                                                         |
-| 17  | Publication Issue has its own lifecycle                             | `adminWorkflow.test.js` "admin workflow — issues"                                                                                                                                                                            |
-| 18  | Issue status does not automatically publish child articles          | `adminWorkflow.test.js` "PHASE 7 DONE-WHEN: publishing an issue leaves DRAFT/PENDING_REVIEW articles invisible to the public"                                                                                                |
+| 17  | Magazine has its own lifecycle                                       | `adminWorkflow.test.js` "admin workflow — magazines"                                                                                                                                                                            |
+| 18  | Magazine status does not automatically publish child articles       | `adminWorkflow.test.js` "PHASE 7 DONE-WHEN: publishing a magazine leaves DRAFT/PENDING_REVIEW articles invisible to the public"                                                                                                |
 | 19  | Article status controls public article visibility                   | `adminWorkflow.test.js` "unpublish/archive (§32) ... hides the article from the public endpoint"                                                                                                                             |
 | 20  | Comments are single-level                                           | `businessRules.test.js` §45 rule 20                                                                                                                                                                                          |
 | 21  | Comment reporting/flagging is not in V1                             | `businessRules.test.js` §45 rule 21                                                                                                                                                                                          |
@@ -396,7 +396,7 @@ Fill the §46 Phase 11 checklist — all eight named business rules get an expli
 | Publisher cannot modify another Publisher's article | `publisherWorkflow.test.js` "ownership"; `authorization.test.js` §45 rule 29                                    |
 | Published revision stays private until approval     | `publisherWorkflow.test.js` "the public-serving guarantee"                                                      |
 | Admin can direct publish                            | `adminWorkflow.test.js` "direct publish and edit-published"                                                     |
-| Issue status does not override article status       | `adminWorkflow.test.js` "PHASE 7 DONE-WHEN: publishing an issue leaves DRAFT/PENDING_REVIEW articles invisible" |
+| Magazine status does not override article status     | `adminWorkflow.test.js` "PHASE 7 DONE-WHEN: publishing a magazine leaves DRAFT/PENDING_REVIEW articles invisible" |
 | Rejected articles can be resubmitted                | `adminWorkflow.test.js` "a rejected article can be resubmitted and later approved"                              |
 | Comments survive user deactivation                  | `comments.test.js` "deactivated-author handling"; `businessRules.test.js` §45 rule 23                           |
 | Unpublished articles are not accessible publicly    | `adminWorkflow.test.js` unpublish/archive; `search.test.js` "respects publication status"                       |

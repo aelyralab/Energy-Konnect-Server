@@ -258,15 +258,15 @@ Same shape as categories.
 
 Same shape as categories.
 
-### Publications (issues) — `/api/publications`
+### Magazines — `/api/magazines`
 
-#### `GET /publications`
+#### `GET /magazines`
 
-Paginated list of published issues (summary shape — no article contents).
+Paginated list of published magazines (summary shape — no article contents).
 
-#### `GET /publications/:slug`
+#### `GET /magazines/:slug`
 
-Full issue detail with its published articles grouped by section, in display order.
+Full magazine detail with its published articles grouped by section, in display order.
 
 ```jsonc
 {
@@ -318,7 +318,7 @@ Author or an ADMIN only — `403 FORBIDDEN` otherwise. `204 No Content`.
 ### `POST /api/media` — PUBLISHER or ADMIN
 
 `multipart/form-data`, field name `file`. Images: 10 MB cap, dimensions probed from the
-uploaded bytes. PDFs: larger cap for issue PDFs. Files are stored outside PostgreSQL (local
+uploaded bytes. PDFs: larger cap for magazine PDFs. Files are stored outside PostgreSQL (local
 disk in dev, S3/Cloudinary-compatible in production) under a randomly generated storage
 key — never the caller-supplied filename — only a URL + metadata row is persisted.
 
@@ -382,6 +382,13 @@ Paginated list of the caller's own articles (any status), owner-facing shape:
 Create a new draft (status `DRAFT`). Body: title, authorName, categoryId required;
 subtitle/summary/authorBio/coverMediaId optional; `blocks` (see Content blocks below,
 may be empty for a draft); optional `topicIds`/`tagIds` arrays.
+
+`contentMode` (`"BLOCKS"` | `"PDF"`, default `"BLOCKS"`) selects how the article's body
+is authored. `BLOCKS` is the native editor above. `PDF` wraps an uploaded PDF instead —
+`pdfMediaId` (a `MediaAsset` id from `POST /media`, `application/pdf`) is then required,
+and `pdfPageCount` is optional metadata for the reader's page count. `blocks` may be `[]`
+in PDF mode; full-text search reads only title/subtitle/summary/taxonomy/author, never
+block content, so a PDF article is exactly as searchable as a block one.
 
 ### `GET /articles/:id`
 
@@ -487,20 +494,26 @@ Same audit-trail shape as the publisher endpoint, unscoped.
 #### `DELETE /articles/:id`
 
 Hard delete, any status — unlike the publisher's `DELETE`, which only ever touches a
-never-published draft. Cascades to every version, comment, review-action audit row, issue
+never-published draft. Cascades to every version, comment, review-action audit row, magazine
 placement, notification and guest-read record for the article. `204 No Content`.
 
-### Issues — `/api/admin/issues`
+### Magazines — `/api/admin/magazines`
 
-Publication issues have a lifecycle fully independent of the articles inside them — an
-issue can be `PUBLISHED` while one of its articles is `UNPUBLISHED`; the public
-`/api/publications/:slug` response filters those out rather than trusting the join.
+Magazines have a lifecycle fully independent of the articles inside them — a magazine can be
+`PUBLISHED` while one of its articles is `UNPUBLISHED`; the public `/api/magazines/:slug`
+response filters those out rather than trusting the join.
 
-#### `GET /issues` · `GET /issues/:id`
+An editorial is a first-class part of the magazine (`editorialTitle`/`editorialAuthor`/
+`editorialSummary`/`editorialBody`), not an article — `sectionLabel: "Editorial"` on
+`POST`/`PATCH .../articles*` is rejected.
 
-Paginated list / single issue, admin shape (all statuses, unfiltered contents).
+#### `GET /magazines` · `GET /magazines/:id`
 
-#### `POST /issues`
+Paginated list / single magazine, admin shape (all statuses, unfiltered contents). Both shapes
+carry `articleCount` (total attached, regardless of article status); the list response's
+`articles` array is always empty for performance — fetch `GET /magazines/:id` for the full list.
+
+#### `POST /magazines`
 
 ```jsonc
 {
@@ -515,25 +528,27 @@ Paginated list / single issue, admin shape (all statuses, unfiltered contents).
 }
 ```
 
-#### `PUT /issues/:id`
+#### `PUT /magazines/:id`
 
 Partial update — any subset of the create fields; nullable fields accept `null` to clear.
+Also accepts `editorialTitle`, `editorialAuthor`, `editorialSummary`, `editorialBody` (an
+array of `{ blockType, content }`, same shape as an article's blocks).
 
-#### `DELETE /issues/:id`
+#### `DELETE /magazines/:id`
 
 `204 No Content`.
 
-#### `POST /issues/:id/articles`
+#### `POST /magazines/:id/articles`
 
-Attach an article to the issue.
+Attach an article to the magazine.
 
 ```jsonc
 { "articleId": "...", "sectionLabel": "Features", "displayOrder": 0 }
 ```
 
-#### `PATCH /issues/:id/articles/reorder`
+#### `PATCH /magazines/:id/articles/reorder`
 
-Bulk-set display order/section for the issue's articles in one call.
+Bulk-set display order/section for the magazine's articles in one call.
 
 ```jsonc
 {
@@ -544,11 +559,11 @@ Bulk-set display order/section for the issue's articles in one call.
 }
 ```
 
-#### `DELETE /issues/:id/articles/:articleId`
+#### `DELETE /magazines/:id/articles/:articleId`
 
-Detach one article from the issue. `204 No Content`.
+Detach one article from the magazine. `204 No Content`.
 
-#### `POST /issues/:id/publish` / `POST /issues/:id/archive`
+#### `POST /magazines/:id/publish` / `POST /magazines/:id/archive`
 
 No body.
 

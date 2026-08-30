@@ -10,3 +10,4 @@ npm-debug.log*
 # Ingest pipeline working files (out/) and local credentials
 ingest/out/
 ingest/.env
+ingest/out/.session.json

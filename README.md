@@ -57,7 +57,7 @@ npm run seed
 ```
 
 Creates one account per role, the category/topic/tag taxonomy, both
-publication issues and three fully-populated published articles — all
+magazines and three fully-populated published articles — all
 ported from `client/src/data/*.js` so the seeded content matches what the
 frontend prototype already renders. Idempotent — safe to re-run.
 
@@ -170,9 +170,9 @@ Phases 1–10 are complete and verified against a live Neon database:
   - `GET /api/articles` (filter by category/topic/tag/issue/featured,
     paginated, PUBLISHED-only enforced in the repository) and
     `GET /api/articles/:slug` (full content in the context doc's §35 shape).
-  - `GET /api/publications` and `/api/publications/:slug` — issue archive,
-    with the issue's article list itself filtered to PUBLISHED articles
-    (issue status and article status stay independent, per rule 18).
+  - `GET /api/magazines` and `/api/magazines/:slug` — magazine archive,
+    with the magazine's article list itself filtered to PUBLISHED articles
+    (magazine status and article status stay independent, per rule 18).
   - `GET /api/categories` / `/api/topics` / `/api/tags` (public, Redis-cached
     with write-through invalidation) plus `/api/admin/{categories,topics,tags}`
     CRUD (ADMIN-only, slug frozen at creation, delete blocked while a term is
@@ -227,12 +227,12 @@ Phases 1–10 are complete and verified against a live Neon database:
     issued through the global Prisma client from _inside_ the transaction
     callback, so it returned pre-commit data — every promotion looked like
     it silently failed until the read moved outside the transaction.
-  - **Issues** (`/api/admin/issues/*`): CRUD, attach/reorder/detach
-    articles with section labels, publish/archive. Publishing an issue only
-    ever changes the issue row — verified directly against the public
-    `/api/publications/:slug` endpoint that a DRAFT and a PENDING_REVIEW
-    article attached to a newly-published issue stay exactly as invisible
-    as before (§21, rule 18).
+  - **Magazines** (`/api/admin/magazines/*`): CRUD, attach/reorder/detach
+    articles with section labels, publish/archive. Publishing a magazine
+    only ever changes the magazine row — verified directly against the
+    public `/api/magazines/:slug` endpoint that a DRAFT and a
+    PENDING_REVIEW article attached to a newly-published magazine stay
+    exactly as invisible as before (§21, rule 18).
   - **Users** (`/api/admin/users`): the only path from `role: USER` to
     PUBLISHER/ADMIN. An admin can't self-demote or self-deactivate (no
     recovery path short of direct DB access); deactivating someone revokes
@@ -259,7 +259,7 @@ Phases 1–10 are complete and verified against a live Neon database:
   Phase 8 bar directly: deactivating a comment's author still returns the
   comment, content intact, with `author: null` in the serialized response.
 - **Phase 9** — notifications (context doc §39–41): a transactional outbox,
-  not a queue. Publishing an article/issue writes `Notification` +
+  not a queue. Publishing an article/magazine writes `Notification` +
   `EmailNotification(status: PENDING)` rows in the _same transaction_ as the
   state change — a crash can't leave one without the other. `src/worker.js`
   (`npm run worker`) is a polling process, not a BullMQ consumer:
