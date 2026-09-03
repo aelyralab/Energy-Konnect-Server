@@ -41,4 +41,12 @@ export async function uploadFile({ buffer, storageKey, mimeType }) {
   };
 }
 
-export default { uploadFile };
+export async function deleteFile({ storageKey, mimeType }) {
+  ensureConfigured();
+  const resourceType = mimeType === "application/pdf" ? "raw" : "image";
+  // invalidate: true also purges Cloudinary's CDN cache, so a deleted image
+  // doesn't keep serving from edge caches under its old URL.
+  await cloudinary.uploader.destroy(storageKey, { resource_type: resourceType, invalidate: true });
+}
+
+export default { uploadFile, deleteFile };

@@ -1,5 +1,5 @@
 import asyncHandler from "../../utils/asyncHandler.js";
-import { sendCreated, sendPaginated } from "../../utils/respond.js";
+import { sendCreated, sendData, sendPaginated } from "../../utils/respond.js";
 import { serializeMedia } from "../../utils/serializers/media.serializer.js";
 import * as mediaService from "./media.service.js";
 
@@ -17,4 +17,10 @@ export const list = asyncHandler(async (req, res) => {
     items.map((media) => ({ ...serializeMedia(media), uploader: media.uploader })),
     { page, limit, total },
   );
+});
+
+/** POST /api/admin/media/delete — bulk (or single-item) delete. */
+export const deleteMany = asyncHandler(async (req, res) => {
+  const result = await mediaService.deleteMany(req.body.ids);
+  return sendData(res, result);
 });

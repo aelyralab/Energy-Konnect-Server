@@ -18,4 +18,9 @@ export async function uploadFile(params) {
   return activeProvider.uploadFile(params);
 }
 
-export default { uploadFile };
+/** @param {{storageKey: string, mimeType: string}} params */
+export async function deleteFile(params) {
+  return activeProvider.deleteFile(params);
+}
+
+export default { uploadFile, deleteFile };

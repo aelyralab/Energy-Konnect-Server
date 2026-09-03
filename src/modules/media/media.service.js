@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import ApiError from "../../utils/ApiError.js";
-import { uploadFile } from "../../services/storage/index.js";
+import logger from "../../config/logger.js";
+import { uploadFile, deleteFile } from "../../services/storage/index.js";
 import * as repo from "./media.repository.js";
 
 const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
@@ -70,4 +71,56 @@ export async function getById(id) {
 export async function listAll(query) {
   const { items, total } = await repo.findAll(query);
   return { items, total, page: query.page, limit: query.limit };
+}
+
+function describeUsage(usage) {
+  const parts = [];
+  if (usage.covers > 0) parts.push(`${usage.covers} cover image use(s)`);
+  if (usage.pdfs > 0) parts.push(`${usage.pdfs} PDF attachment use(s)`);
+  if (usage.versionCovers > 0) parts.push(`${usage.versionCovers} draft/revision cover use(s)`);
+  if (usage.versionPdfs > 0) parts.push(`${usage.versionPdfs} draft/revision PDF use(s)`);
+  if (usage.authorImages > 0) parts.push(`${usage.authorImages} editorial author image use(s)`);
+  if (usage.blocks > 0) parts.push(`${usage.blocks} embedded content block use(s)`);
+  return parts.join(", ");
+}
+
+/**
+ * Deletes as many of the given media assets as are safe to delete, and
+ * reports the rest rather than failing the whole batch — a multi-select
+ * cleanup of dozens of uploads shouldn't be blocked by the one still-in-use
+ * asset among them. Each surviving deletion removes the storage file too
+ * (best-effort: a storage failure is logged and doesn't stop the others,
+ * since a dangling database row is worse than an orphaned Cloudinary file).
+ */
+export async function deleteMany(ids) {
+  const deleted = [];
+  const skipped = [];
+
+  for (const id of ids) {
+    const media = await repo.findById(id);
+    if (!media) {
+      skipped.push({ id, reason: "Not found" });
+      continue;
+    }
+
+    const usage = await repo.findUsage(id);
+    const reason = describeUsage(usage);
+    if (reason) {
+      skipped.push({ id, fileName: media.fileName, reason: `Still in use — ${reason}` });
+      continue;
+    }
+
+    await repo.remove(id);
+    try {
+      await deleteFile({ storageKey: media.storageKey, mimeType: media.mimeType });
+    } catch (error) {
+      logger.warn(
+        { err: error.message, mediaId: id },
+        "database row deleted but the storage file could not be removed",
+      );
+    }
+    deleted.push(id);
+  }
+
+  return { deleted, skipped };
 }

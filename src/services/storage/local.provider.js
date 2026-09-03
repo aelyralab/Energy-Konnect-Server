@@ -40,4 +40,14 @@ export async function uploadFile({ buffer, storageKey, mimeType }) {
   };
 }
 
-export default { uploadFile };
+export async function deleteFile({ storageKey }) {
+  try {
+    await fs.unlink(path.join(UPLOAD_DIR, storageKey));
+  } catch (error) {
+    // Already gone (or never written) — deleting the database row should
+    // still succeed rather than get stuck on a file that isn't there.
+    if (error.code !== "ENOENT") throw error;
+  }
+}
+
+export default { uploadFile, deleteFile };
